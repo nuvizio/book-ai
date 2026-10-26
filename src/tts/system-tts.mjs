@@ -51,7 +51,7 @@ export function synthesizeSystemSpeech({ text, voice = 'af_heart', speed = 1.0 }
       });
 
       if (sayRes.status === 0 && fs.existsSync(tmpAiff)) {
-        spawnSync('afconvert', ['-f', 'WAVE', '-d', 'LEI16@24000', tmpAiff, tmpWav], {
+        spawnSync('afconvert', ['-f', 'WAVE', '-d', 'LEI16', tmpAiff, tmpWav], {
           timeout: 15000,
         });
 
