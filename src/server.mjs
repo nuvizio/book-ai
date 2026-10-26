@@ -45,11 +45,12 @@ export async function startServer(options = {}) {
 
     // 2. Auto-Pairing Handshake (/v1/pair)
     if (pathname === '/v1/pair' && req.method === 'GET') {
+      const origin = req.headers['origin'] || '';
+      const isLocalOrigin = !origin || origin.startsWith('http://localhost:') || origin.startsWith('http://127.0.0.1:') || origin === 'tauri://localhost';
       const authHeader = req.headers['authorization'] || '';
-      const isWithinWindow = Date.now() - bootTime < 120_000; // 2 minute pairing window on boot
       const isTokenValid = authHeader === `Bearer ${sessionToken}`;
 
-      if (isWithinWindow || isTokenValid) {
+      if (isLocalOrigin || isTokenValid) {
         res.writeHead(200, { 'Content-Type': 'application/json' });
         return res.end(JSON.stringify({
           ok: true,
@@ -62,7 +63,7 @@ export async function startServer(options = {}) {
       }
 
       res.writeHead(401, { 'Content-Type': 'application/json' });
-      return res.end(JSON.stringify({ error: 'Pairing window expired. Restart book-ai to pair.' }));
+      return res.end(JSON.stringify({ error: 'Unauthorized origin for pairing.' }));
     }
 
     // 3. Models List
@@ -144,6 +145,7 @@ export async function startServer(options = {}) {
           });
           return res.end(audioBuffer);
         } catch (err) {
+          console.error('[book-ai:tts] Speech request error:', err.message);
           res.writeHead(500, { 'Content-Type': 'application/json' });
           return res.end(JSON.stringify({ error: err.message }));
         }

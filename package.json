@@ -1,6 +1,6 @@
 {
   "name": "@ude-ai/book-ai",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "Zero-config local AI companion for BookReader — unified LLM proxy, neural TTS narrator, and auto-pairing daemon.",
   "type": "module",
   "main": "./src/server.mjs",
