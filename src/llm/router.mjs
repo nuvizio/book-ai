@@ -1,7 +1,6 @@
 import { detectInstalledClis, queryClaudeCli, queryAgyCli, queryCodexCli } from './cli-provider.mjs';
 import { isServerReachable, queryLocalServer } from './server-provider.mjs';
 import { queryCommercialApi } from './api-provider.mjs';
-import { generateLiteraryFallback } from './fallback.mjs';
 
 export const CATALOG_MODELS = [
   { id: 'claude-3-5-sonnet', name: 'Claude 3.5 Sonnet', provider: 'anthropic' },
@@ -10,7 +9,6 @@ export const CATALOG_MODELS = [
   { id: 'gpt-4o', name: 'GPT-4o', provider: 'openai' },
   { id: 'deepseek-r1', name: 'DeepSeek R1', provider: 'deepseek' },
   { id: 'llama3.2', name: 'Llama 3.2 (Ollama)', provider: 'meta' },
-  { id: 'book-ai-offline', name: 'Book-AI Offline Literary Engine', provider: 'local' },
 ];
 
 export function listAvailableModels(config) {
@@ -25,11 +23,6 @@ export function listAvailableModels(config) {
 export async function handleChatCompletion({ model = 'claude-3-5-sonnet', messages = [], config }) {
   const prompt = messages.map((m) => `${m.role}: ${m.content}`).join('\n\n');
   const mLower = (model || '').toLowerCase();
-
-  // 0. Explicit Offline Request
-  if (mLower === 'book-ai-offline') {
-    return generateLiteraryFallback(model, prompt);
-  }
 
   // 1. Direct Local CLI Routing
   if (mLower.includes('claude') || mLower === 'claude-cli') {
@@ -74,7 +67,7 @@ export async function handleChatCompletion({ model = 'claude-3-5-sonnet', messag
     return await queryCommercialApi({ provider: 'groq', apiKey: apiKeys.groq, model, messages });
   }
 
-  // 4. Fallback to any installed local CLI before offline mock
+  // 4. Fallback to any installed local CLI before giving up
   const claudeRes = queryClaudeCli(prompt);
   if (claudeRes) return claudeRes;
 
@@ -84,6 +77,6 @@ export async function handleChatCompletion({ model = 'claude-3-5-sonnet', messag
   const codexRes = queryCodexCli(prompt);
   if (codexRes) return codexRes;
 
-  // 5. Default: fallback to offline literary reasoning
-  return generateLiteraryFallback(model, prompt);
+  // 5. Explicit failure — never mock or generate canned replies
+  throw new Error(`No LLM engine or CLI available to serve model "${model}". Please authenticate Claude Code CLI, agy CLI, start Ollama, or configure an API key in ~/.book-ai/config.json.`);
 }

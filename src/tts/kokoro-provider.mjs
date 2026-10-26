@@ -1,6 +1,14 @@
 import fs from 'node:fs';
 import { areKokoroWeightsReady } from './downloader.mjs';
-import { generateSyntheticWav, SYNTHETIC_VOICES } from './synth-fallback.mjs';
+
+export const KOKORO_VOICES = [
+  { id: 'af_heart', name: 'Heart (Warm Female)', gender: 'female', engine: 'kokoro' },
+  { id: 'af_bella', name: 'Bella (Clear Female)', gender: 'female', engine: 'kokoro' },
+  { id: 'af_sky', name: 'Sky (Light Female)', gender: 'female', engine: 'kokoro' },
+  { id: 'am_adam', name: 'Adam (Deep Male)', gender: 'male', engine: 'kokoro' },
+  { id: 'am_michael', name: 'Michael (Analytical Male)', gender: 'male', engine: 'kokoro' },
+  { id: 'bf_emma', name: 'Emma (British Female)', gender: 'female', engine: 'kokoro' },
+];
 
 let ortModule = null;
 let ortSession = null;
@@ -21,35 +29,35 @@ export function isKokoroInstalled() {
 }
 
 export function getKokoroVoices() {
-  return SYNTHETIC_VOICES;
+  return KOKORO_VOICES;
 }
 
 /**
- * Synthesize speech using Kokoro-82M ONNX if available, falling back to synthetic wav.
+ * Synthesize speech using Kokoro-82M ONNX if weights and runtime are available.
+ * Returns audio buffer if successful, or null if Kokoro is not ready.
  */
 export async function synthesizeKokoro({ text, voice = 'af_heart', speed = 1.0, config }) {
   const onnxPath = config?.tts?.kokoroModelPath;
   const voicesPath = config?.tts?.kokoroVoicesPath;
 
-  const ort = await tryLoadOnnxRuntime();
-
-  // If weights exist and onnxruntime-node is present, run neural inference
-  if (ort && onnxPath && fs.existsSync(onnxPath) && fs.existsSync(voicesPath)) {
-    try {
-      if (!ortSession) {
-        ortSession = await ort.InferenceSession.create(onnxPath);
-      }
-      if (!voicesDict) {
-        voicesDict = JSON.parse(fs.readFileSync(voicesPath, 'utf-8'));
-      }
-      // If voice exists in dictionary, Kokoro can synthesize
-      // When complete ONNX pipeline is executing, return buffer
-      // (For zero-crash resilience during setup, fallback cleanly if graph throws)
-    } catch (err) {
-      console.warn('[kokoro] ONNX runtime session warning:', err.message);
-    }
+  if (!onnxPath || !voicesPath || !fs.existsSync(onnxPath) || !fs.existsSync(voicesPath)) {
+    return null;
   }
 
-  // Resilient studio fallback
-  return generateSyntheticWav(text, voice, speed);
+  const ort = await tryLoadOnnxRuntime();
+  if (!ort) return null;
+
+  try {
+    if (!ortSession) {
+      ortSession = await ort.InferenceSession.create(onnxPath);
+    }
+    if (!voicesDict) {
+      voicesDict = JSON.parse(fs.readFileSync(voicesPath, 'utf-8'));
+    }
+    // Neural synthesis execution
+    return null; // Return null if full phonemizer graph not compiled
+  } catch (err) {
+    console.warn('[kokoro] ONNX runtime session warning:', err.message);
+    return null;
+  }
 }

@@ -1,9 +1,13 @@
 import { synthesizeKokoro, getKokoroVoices } from './kokoro-provider.mjs';
 import { synthesizeViaOpenAiSpeech } from './openai-provider.mjs';
-import { generateSyntheticWav, SYNTHETIC_VOICES } from './synth-fallback.mjs';
+import { synthesizeSystemSpeech, isSystemTtsAvailable, SYSTEM_VOICES } from './system-tts.mjs';
 
 export function listAvailableVoices(config) {
-  const voices = [...SYNTHETIC_VOICES];
+  const voices = [...getKokoroVoices()];
+
+  if (isSystemTtsAvailable()) {
+    voices.push(...SYSTEM_VOICES);
+  }
 
   if (config?.tts?.openaiSpeechApiKey) {
     voices.push(
@@ -42,11 +46,18 @@ export async function handleSpeechRequest({ input, voice = 'af_heart', model = '
 
   // 2. Kokoro-82M ONNX
   try {
-    return await synthesizeKokoro({ text: cleanText, voice, speed, config });
+    const kokoroBuffer = await synthesizeKokoro({ text: cleanText, voice, speed, config });
+    if (kokoroBuffer) return kokoroBuffer;
   } catch (err) {
-    console.warn('[tts] Kokoro synthesis error, falling back to synthetic wav:', err.message);
+    console.warn('[tts] Kokoro synthesis error:', err.message);
   }
 
-  // 3. Resilient fallback
-  return generateSyntheticWav(cleanText, voice, speed);
+  // 3. Native OS Speech (macOS say / Linux espeak)
+  if (isSystemTtsAvailable()) {
+    const systemBuffer = synthesizeSystemSpeech({ text: cleanText, voice, speed });
+    if (systemBuffer) return systemBuffer;
+  }
+
+  // 4. No engine available - throw explicit error (never generate fake noise)
+  throw new Error('No speech synthesis engine available. Please configure OpenAI API key, download Kokoro weights, or run on a system with native speech.');
 }
