@@ -1,5 +1,12 @@
+import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
-import { areKokoroWeightsReady } from './downloader.mjs';
+import path from 'node:path';
+import os from 'node:os';
+import { fileURLToPath } from 'node:url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const RUNNER_SCRIPT = path.join(__dirname, 'kokoro-runner.py');
 
 export const KOKORO_VOICES = [
   { id: 'af_heart', name: 'Heart (Warm Female)', gender: 'female', engine: 'kokoro' },
@@ -10,54 +17,75 @@ export const KOKORO_VOICES = [
   { id: 'bf_emma', name: 'Emma (British Female)', gender: 'female', engine: 'kokoro' },
 ];
 
-let ortModule = null;
-let ortSession = null;
-let voicesDict = null;
-
-async function tryLoadOnnxRuntime() {
-  if (ortModule) return ortModule;
-  try {
-    ortModule = await import('onnxruntime-node');
-    return ortModule;
-  } catch {
-    return null;
-  }
-}
-
-export function isKokoroInstalled() {
-  return areKokoroWeightsReady();
-}
-
 export function getKokoroVoices() {
   return KOKORO_VOICES;
 }
 
+function resolvePythonCommand() {
+  // 1. Explicit environment variable
+  if (process.env.KOKORO_PYTHON_BIN && fs.existsSync(process.env.KOKORO_PYTHON_BIN)) {
+    return { cmd: process.env.KOKORO_PYTHON_BIN, args: [] };
+  }
+
+  // 2. Known local virtualenv with kokoro-onnx installed
+  const knownVenvs = [
+    '/Users/yuechuan/Projects/mrepo-gemini/tools/audio/.venv/bin/python',
+    path.join(process.cwd(), 'tools/audio/.venv/bin/python'),
+    path.join(os.homedir(), '.book-ai/.venv/bin/python'),
+  ];
+  for (const venv of knownVenvs) {
+    if (fs.existsSync(venv)) {
+      return { cmd: venv, args: [] };
+    }
+  }
+
+  // 3. System python3 if kokoro-onnx is installed
+  const checkSys = spawnSync('python3', ['-c', 'import kokoro_onnx'], { stdio: 'ignore' });
+  if (checkSys.status === 0) {
+    return { cmd: 'python3', args: [] };
+  }
+
+  // 4. uv run --with kokoro-onnx python3
+  const checkUv = spawnSync('which', ['uv'], { stdio: 'ignore' });
+  if (checkUv.status === 0) {
+    return { cmd: 'uv', args: ['run', '--with', 'kokoro-onnx', 'python3'] };
+  }
+
+  return null;
+}
+
+export function isKokoroInstalled() {
+  const runner = resolvePythonCommand();
+  return runner !== null;
+}
+
 /**
- * Synthesize speech using Kokoro-82M ONNX if weights and runtime are available.
- * Returns audio buffer if successful, or null if Kokoro is not ready.
+ * Synthesizes real neural speech using Kokoro-82M ONNX.
+ * Returns raw 24kHz 16-bit mono RIFF WAV buffer.
  */
-export async function synthesizeKokoro({ text, voice = 'af_heart', speed = 1.0, config }) {
-  const onnxPath = config?.tts?.kokoroModelPath;
-  const voicesPath = config?.tts?.kokoroVoicesPath;
-
-  if (!onnxPath || !voicesPath || !fs.existsSync(onnxPath) || !fs.existsSync(voicesPath)) {
-    return null;
+export async function synthesizeKokoro({ text, voice = 'af_heart', speed = 1.0 }) {
+  const runner = resolvePythonCommand();
+  if (!runner) {
+    throw new Error('Kokoro neural TTS requires Python with kokoro-onnx or uv installed.');
   }
 
-  const ort = await tryLoadOnnxRuntime();
-  if (!ort) return null;
+  const payload = JSON.stringify({ text, voice, speed });
+  const execArgs = [...runner.args, RUNNER_SCRIPT];
 
-  try {
-    if (!ortSession) {
-      ortSession = await ort.InferenceSession.create(onnxPath);
+  const res = spawnSync(runner.cmd, execArgs, {
+    input: payload,
+    maxBuffer: 64 * 1024 * 1024,
+    timeout: 60000,
+  });
+
+  if (res.status === 0 && res.stdout && res.stdout.length > 44) {
+    // Verify RIFF header
+    const magic = res.stdout.toString('ascii', 0, 4);
+    if (magic === 'RIFF') {
+      return res.stdout;
     }
-    if (!voicesDict) {
-      voicesDict = JSON.parse(fs.readFileSync(voicesPath, 'utf-8'));
-    }
-    // Neural synthesis execution
-    return null; // Return null if full phonemizer graph not compiled
-  } catch (err) {
-    console.warn('[kokoro] ONNX runtime session warning:', err.message);
-    return null;
   }
+
+  const stderr = res.stderr ? res.stderr.toString('utf-8').trim() : 'Unknown error';
+  throw new Error(`Kokoro neural synthesis failed (exit code ${res.status}): ${stderr}`);
 }

@@ -1,14 +1,9 @@
 import { synthesizeKokoro, getKokoroVoices } from './kokoro-provider.mjs';
 import { synthesizeViaOpenAiSpeech } from './openai-provider.mjs';
-import { synthesizeSystemSpeech, isSystemTtsAvailable, SYSTEM_VOICES } from './system-tts.mjs';
 import { validatePcmWav } from './wav-utils.mjs';
 
 export function listAvailableVoices(config) {
   const voices = [...getKokoroVoices()];
-
-  if (isSystemTtsAvailable()) {
-    voices.push(...SYSTEM_VOICES);
-  }
 
   if (config?.tts?.openaiSpeechApiKey) {
     voices.push(
@@ -47,31 +42,17 @@ export async function handleSpeechRequest({ input, voice = 'af_heart', model = '
     }
   }
 
-  // 2. Kokoro-82M ONNX
+  // 2. Real Kokoro-82M Neural Synthesis
   if (!audioBuffer) {
-    try {
-      audioBuffer = await synthesizeKokoro({ text: cleanText, voice, speed, config });
-    } catch (err) {
-      console.warn('[tts] Kokoro synthesis error:', err.message);
-    }
+    audioBuffer = await synthesizeKokoro({ text: cleanText, voice, speed });
   }
 
-  // 3. Native OS Speech (macOS say / Linux espeak)
-  if (!audioBuffer && isSystemTtsAvailable()) {
-    audioBuffer = synthesizeSystemSpeech({ text: cleanText, voice, speed });
-  }
-
-  // 4. Validate audio parameters before delivering to browser
+  // 3. Validate PCM WAV audio parameters
   if (audioBuffer) {
-    try {
-      const meta = validatePcmWav(audioBuffer);
-      console.log(`[book-ai:tts] Validated PCM WAV: ${meta.sampleRate}Hz, ${meta.numChannels}ch, ${meta.bitsPerSample}-bit (${audioBuffer.length} bytes)`);
-    } catch (err) {
-      console.warn(`[book-ai:tts] WAV validation warning: ${err.message}`);
-    }
+    const meta = validatePcmWav(audioBuffer);
+    console.log(`[book-ai:tts] Synthesized neural Kokoro WAV: ${meta.sampleRate}Hz, ${meta.numChannels}ch, ${meta.bitsPerSample}-bit (${audioBuffer.length} bytes)`);
     return audioBuffer;
   }
 
-  // 5. No engine available - throw explicit error (never generate fake noise)
-  throw new Error('No speech synthesis engine available. Please configure OpenAI API key, download Kokoro weights, or run on a system with native speech.');
+  throw new Error('No speech synthesis engine available.');
 }
