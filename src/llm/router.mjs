@@ -24,7 +24,12 @@ export function listAvailableModels(config) {
 
 export async function handleChatCompletion({ model = 'claude-3-5-sonnet', messages = [], config }) {
   const prompt = messages.map((m) => `${m.role}: ${m.content}`).join('\n\n');
-  const mLower = model.toLowerCase();
+  const mLower = (model || '').toLowerCase();
+
+  // 0. Explicit Offline Request
+  if (mLower === 'book-ai-offline') {
+    return generateLiteraryFallback(model, prompt);
+  }
 
   // 1. Direct Local CLI Routing
   if (mLower.includes('claude') || mLower === 'claude-cli') {
@@ -69,6 +74,16 @@ export async function handleChatCompletion({ model = 'claude-3-5-sonnet', messag
     return await queryCommercialApi({ provider: 'groq', apiKey: apiKeys.groq, model, messages });
   }
 
-  // 4. Default: fallback to offline literary reasoning
+  // 4. Fallback to any installed local CLI before offline mock
+  const claudeRes = queryClaudeCli(prompt);
+  if (claudeRes) return claudeRes;
+
+  const agyRes = queryAgyCli(model, prompt);
+  if (agyRes) return agyRes;
+
+  const codexRes = queryCodexCli(prompt);
+  if (codexRes) return codexRes;
+
+  // 5. Default: fallback to offline literary reasoning
   return generateLiteraryFallback(model, prompt);
 }

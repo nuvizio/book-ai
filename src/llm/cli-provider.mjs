@@ -14,47 +14,32 @@ export function detectInstalledClis() {
 export function queryClaudeCli(prompt) {
   if (!isCommandAvailable('claude')) return null;
   try {
-    const res = spawnSync('claude', ['-p', '--output-format', 'stream-json'], {
+    const res = spawnSync('claude', ['-p'], {
       input: prompt,
       encoding: 'utf-8',
-      timeout: 30000,
+      timeout: 45000,
     });
-    if (res.status === 0 && res.stdout) {
-      // Parse output or stream-json
-      const lines = res.stdout.trim().split('\n');
-      for (const line of lines) {
-        try {
-          const parsed = JSON.parse(line);
-          if (parsed.result || parsed.text) return parsed.result || parsed.text;
-        } catch {
-          // not json
-        }
-      }
+    if (res.status === 0 && res.stdout && res.stdout.trim()) {
       return res.stdout.trim();
     }
-  } catch {
-    // CLI query failed
+  } catch (err) {
+    console.warn('[book-ai] Claude CLI query error:', err.message);
   }
   return null;
 }
 
 export function queryAgyCli(model, prompt) {
   if (!isCommandAvailable('agy')) return null;
-  const mLower = (model || '').toLowerCase();
-  let targetModel = model;
-  if (mLower.includes('claude') || mLower.includes('sonnet')) targetModel = 'claude-sonnet-5-5-high';
-  else if (mLower.includes('gemini') || mLower.includes('flash')) targetModel = 'gemini-3.8-flash-high';
-
   try {
-    const res = spawnSync('agy', ['--model', targetModel, '--print', prompt], {
+    const res = spawnSync('agy', ['-p', prompt], {
       encoding: 'utf-8',
-      timeout: 30000,
+      timeout: 45000,
     });
-    if (res.status === 0 && res.stdout) {
+    if (res.status === 0 && res.stdout && res.stdout.trim()) {
       return res.stdout.trim();
     }
-  } catch {
-    // CLI query failed
+  } catch (err) {
+    console.warn('[book-ai] agy CLI query error:', err.message);
   }
   return null;
 }
