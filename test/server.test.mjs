@@ -81,6 +81,24 @@ test('book-ai server integration & pairing suite', async (t) => {
     assert.equal(header, 'RIFF');
   });
 
+  await t.test('POST /v1/audio/speech supports Fish Audio model and speakers', async () => {
+    const res = await fetch(`${instance.url}/v1/audio/speech`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'fish-s2-pro',
+        voice: 'fish_narrator_en',
+        input: '[excited] Reading with Fish Audio narrator.',
+      }),
+    });
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get('content-type'), 'audio/wav');
+    const buffer = await res.arrayBuffer();
+    assert.ok(buffer.byteLength > 100);
+    const header = Buffer.from(buffer.slice(0, 4)).toString();
+    assert.equal(header, 'RIFF');
+  });
+
   // Clean shutdown
   instance.server.close();
 });
