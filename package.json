@@ -1,0 +1,45 @@
+{
+  "name": "@ude-ai/book-ai",
+  "version": "1.0.0",
+  "description": "Zero-config local AI companion for BookReader — unified LLM proxy, neural TTS narrator, and auto-pairing daemon.",
+  "type": "module",
+  "main": "./src/server.mjs",
+  "bin": {
+    "book-ai": "./bin/book-ai.mjs"
+  },
+  "files": [
+    "bin",
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "book-ai",
+    "bookreader",
+    "llm-proxy",
+    "tts",
+    "audiobook",
+    "kokoro",
+    "claude",
+    "gemini",
+    "ollama",
+    "ude"
+  ],
+  "author": "UDE AI Team",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ude-ai/book-ai.git"
+  },
+  "homepage": "https://github.com/ude-ai/book-ai#readme",
+  "bugs": {
+    "url": "https://github.com/ude-ai/book-ai/issues"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "scripts": {
+    "start": "node ./bin/book-ai.mjs",
+    "test": "node --test ./test/server.test.mjs"
+  }
+}
