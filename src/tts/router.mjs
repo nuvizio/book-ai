@@ -2,6 +2,8 @@ import { synthesizeKokoro, getKokoroVoices } from './kokoro-provider.mjs';
 import { synthesizeViaOpenAiSpeech } from './openai-provider.mjs';
 import { validatePcmWav } from './wav-utils.mjs';
 
+const OPENAI_VOICES = new Set(['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer']);
+
 export function listAvailableVoices(config) {
   const voices = [...getKokoroVoices()];
 
@@ -26,33 +28,37 @@ export async function handleSpeechRequest({ input, voice = 'af_heart', model = '
 
   const cleanText = input.replace(/\[[A-Za-z0-9_\s-]+\]/g, '').replace(/<\|[A-Za-z0-9_\s-]+\|>/g, '').trim();
 
-  let audioBuffer = null;
+  // 1. OpenAI Speech API
+  const isOpenAiVoice = OPENAI_VOICES.has(voice);
+  const isOpenAiModel = model.startsWith('tts-1');
 
-  // 1. OpenAI / AI Vendor
-  if (model.startsWith('tts-1') || voice === 'alloy' || voice === 'echo' || voice === 'onyx' || voice === 'nova') {
-    if (config?.tts?.openaiSpeechApiKey) {
-      audioBuffer = await synthesizeViaOpenAiSpeech({
-        baseUrl: config.tts.openaiSpeechBaseUrl,
-        apiKey: config.tts.openaiSpeechApiKey,
-        model,
-        input: cleanText,
-        voice,
-        speed,
-      });
+  if (isOpenAiVoice || isOpenAiModel) {
+    if (!config?.tts?.openaiSpeechApiKey) {
+      throw new Error(`OpenAI speech requested for voice "${voice}", but no openaiSpeechApiKey is configured in ~/.book-ai/config.json.`);
     }
+
+    const audioBuffer = await synthesizeViaOpenAiSpeech({
+      baseUrl: config.tts.openaiSpeechBaseUrl,
+      apiKey: config.tts.openaiSpeechApiKey,
+      model: isOpenAiModel ? model : 'tts-1',
+      input: cleanText,
+      voice,
+      speed,
+    });
+
+    validatePcmWav(audioBuffer);
+    return audioBuffer;
   }
 
   // 2. Real Kokoro-82M Neural Synthesis
-  if (!audioBuffer) {
-    audioBuffer = await synthesizeKokoro({ text: cleanText, voice, speed });
-  }
-
-  // 3. Validate PCM WAV audio parameters
-  if (audioBuffer) {
+  const kokoroVoices = new Set(getKokoroVoices().map((v) => v.id));
+  if (kokoroVoices.has(voice) || model === 'kokoro') {
+    const audioBuffer = await synthesizeKokoro({ text: cleanText, voice, speed });
     const meta = validatePcmWav(audioBuffer);
     console.log(`[book-ai:tts] Synthesized neural Kokoro WAV: ${meta.sampleRate}Hz, ${meta.numChannels}ch, ${meta.bitsPerSample}-bit (${audioBuffer.length} bytes)`);
     return audioBuffer;
   }
 
-  throw new Error('No speech synthesis engine available.');
+  // 3. Unknown voice / engine: fail explicitly with exact root cause
+  throw new Error(`Unsupported voice "${voice}" and model "${model}". Supported voices: ${[...kokoroVoices].join(', ')}.`);
 }

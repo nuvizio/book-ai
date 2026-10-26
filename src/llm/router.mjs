@@ -1,4 +1,4 @@
-import { detectInstalledClis, queryClaudeCli, queryAgyCli, queryCodexCli } from './cli-provider.mjs';
+import { queryClaudeCli, queryAgyCli, queryCodexCli } from './cli-provider.mjs';
 import { isServerReachable, queryLocalServer } from './server-provider.mjs';
 import { queryCommercialApi } from './api-provider.mjs';
 
@@ -11,72 +11,86 @@ export const CATALOG_MODELS = [
   { id: 'llama3.2', name: 'Llama 3.2 (Ollama)', provider: 'meta' },
 ];
 
-export function listAvailableModels(config) {
-  const models = [...CATALOG_MODELS];
-  const clis = detectInstalledClis();
-  for (const cli of clis) {
-    models.unshift({ id: `${cli}-cli`, name: `${cli.toUpperCase()} CLI`, provider: 'local-cli' });
-  }
-  return models;
+export function listAvailableModels() {
+  return [...CATALOG_MODELS];
 }
 
 export async function handleChatCompletion({ model = 'claude-3-5-sonnet', messages = [], config }) {
+  if (!messages || messages.length === 0) {
+    throw new Error('No messages provided for completion.');
+  }
+
   const prompt = messages.map((m) => `${m.role}: ${m.content}`).join('\n\n');
   const mLower = (model || '').toLowerCase();
+  const apiKeys = config?.llm?.apiKeys || {};
 
-  // 1. Direct Local CLI Routing
+  // 1. Anthropic / Claude
   if (mLower.includes('claude') || mLower === 'claude-cli') {
-    const res = queryClaudeCli(prompt);
-    if (res) return res;
-  }
-  if (mLower.includes('gemini') || mLower.includes('agy') || mLower === 'agy-cli') {
-    const res = queryAgyCli(model, prompt);
-    if (res) return res;
-  }
-  if (mLower.includes('codex') || mLower === 'codex-cli') {
-    const res = queryCodexCli(prompt);
-    if (res) return res;
+    const cliRes = queryClaudeCli(prompt);
+    if (cliRes) return cliRes;
+
+    if (apiKeys.anthropic) {
+      return await queryCommercialApi({ provider: 'anthropic', apiKey: apiKeys.anthropic, model, messages });
+    }
+
+    throw new Error(
+      `Claude provider requested for model "${model}", but neither Claude CLI ('claude') is functional nor Anthropic API key is configured.`
+    );
   }
 
-  // 2. Ollama / Local Server Routing
+  // 2. Google / Gemini
+  if (mLower.includes('gemini') || mLower.includes('agy') || mLower === 'agy-cli') {
+    const cliRes = queryAgyCli(model, prompt);
+    if (cliRes) return cliRes;
+
+    if (apiKeys.gemini) {
+      return await queryCommercialApi({ provider: 'gemini', apiKey: apiKeys.gemini, model, messages });
+    }
+
+    throw new Error(
+      `Gemini provider requested for model "${model}", but neither agy CLI ('agy') is functional nor Google Gemini API key is configured.`
+    );
+  }
+
+  // 3. OpenAI Codex CLI
+  if (mLower.includes('codex') || mLower === 'codex-cli') {
+    const cliRes = queryCodexCli(prompt);
+    if (cliRes) return cliRes;
+    throw new Error(`Codex CLI provider requested for model "${model}", but 'codex' CLI is not available in PATH.`);
+  }
+
+  // 4. OpenAI API
+  if (mLower.includes('gpt') || mLower.includes('o1') || mLower.includes('o3')) {
+    if (apiKeys.openai) {
+      return await queryCommercialApi({ provider: 'openai', apiKey: apiKeys.openai, model, messages });
+    }
+    throw new Error(`OpenAI model "${model}" requested, but no OpenAI API key is configured in ~/.book-ai/config.json.`);
+  }
+
+  // 5. DeepSeek
+  if (mLower.includes('deepseek')) {
+    if (apiKeys.deepseek) {
+      return await queryCommercialApi({ provider: 'deepseek', apiKey: apiKeys.deepseek, model, messages });
+    }
+    throw new Error(`DeepSeek model "${model}" requested, but no DeepSeek API key is configured in ~/.book-ai/config.json.`);
+  }
+
+  // 6. Groq
+  if (mLower.includes('groq')) {
+    if (apiKeys.groq) {
+      return await queryCommercialApi({ provider: 'groq', apiKey: apiKeys.groq, model, messages });
+    }
+    throw new Error(`Groq model "${model}" requested, but no Groq API key is configured in ~/.book-ai/config.json.`);
+  }
+
+  // 7. Ollama / Local Server
   const ollamaUrl = config?.llm?.ollamaBaseUrl || 'http://127.0.0.1:11434';
   if (await isServerReachable(ollamaUrl)) {
-    try {
-      const res = await queryLocalServer(ollamaUrl, model, messages);
-      if (res) return res;
-    } catch {
-      // Try next
-    }
+    return await queryLocalServer(ollamaUrl, model, messages);
   }
 
-  // 3. API Key Routing
-  const apiKeys = config?.llm?.apiKeys || {};
-  if (mLower.includes('claude') && apiKeys.anthropic) {
-    return await queryCommercialApi({ provider: 'anthropic', apiKey: apiKeys.anthropic, model, messages });
-  }
-  if (mLower.includes('gemini') && apiKeys.gemini) {
-    return await queryCommercialApi({ provider: 'gemini', apiKey: apiKeys.gemini, model, messages });
-  }
-  if ((mLower.includes('gpt') || mLower.includes('o1') || mLower.includes('o3')) && apiKeys.openai) {
-    return await queryCommercialApi({ provider: 'openai', apiKey: apiKeys.openai, model, messages });
-  }
-  if (mLower.includes('deepseek') && apiKeys.deepseek) {
-    return await queryCommercialApi({ provider: 'deepseek', apiKey: apiKeys.deepseek, model, messages });
-  }
-  if (mLower.includes('groq') && apiKeys.groq) {
-    return await queryCommercialApi({ provider: 'groq', apiKey: apiKeys.groq, model, messages });
-  }
-
-  // 4. Fallback to any installed local CLI before giving up
-  const claudeRes = queryClaudeCli(prompt);
-  if (claudeRes) return claudeRes;
-
-  const agyRes = queryAgyCli(model, prompt);
-  if (agyRes) return agyRes;
-
-  const codexRes = queryCodexCli(prompt);
-  if (codexRes) return codexRes;
-
-  // 5. Explicit failure — never mock or generate canned replies
-  throw new Error(`No LLM engine or CLI available to serve model "${model}". Please authenticate Claude Code CLI, agy CLI, start Ollama, or configure an API key in ~/.book-ai/config.json.`);
+  // Explicit failure with actionable root cause
+  throw new Error(
+    `Unsupported or unconfigured model "${model}". Please configure the corresponding CLI or API key in ~/.book-ai/config.json.`
+  );
 }
