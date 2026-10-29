@@ -169,3 +169,26 @@ Runs the full integration and auto-pairing test suite using the Node.js native t
 ## 📄 License
 
 Licensed under the [Apache License 2.0](LICENSE).
+
+## Persistent project sessions (nuvizio extension)
+
+The `nuvizio/book-ai` fork adds application-owned conversation sessions without changing the standard stateless chat-completion API. A music project can keep one durable session while discussing different sections or instruments.
+
+1. Call `GET /v1/pair` from the trusted backend and retain its token in memory.
+2. Call `PUT /v1/sessions/<project-session-id>` with `Authorization: Bearer <token>` to create or reopen the session.
+3. Send `POST /v1/chat/completions` with the usual `model`, `messages`, and `stream`, plus `session_id` and a stable `request_id` for that turn. Send only the new turn and current system instructions; the server replays prior turns.
+4. Use `GET /v1/sessions/<id>?offset=0&limit=50` for the archived transcript. All session APIs and session completions require the paired token.
+
+The response preserves OpenAI-compatible `choices` and adds `session`, `context` and `replayed`. Duplicate request IDs with the same payload return the saved answer without another provider call; reuse for a different payload returns 409. One completion can run per session. Distinct sessions remain independent.
+
+Set `BOOK_AI_SESSION_DIR` to a persistent directory (default `~/.book-ai/sessions`). Files are written atomically with mode 0600. Use one daemon per session directory. Keep these files when restarting or moving the daemon. Pairing tokens change on restart; session IDs and archived turns do not. Long archives retain all turns; the response reports the bounded history window replayed to the provider. A failed provider call does not append a fabricated answer.
+
+CLI completion calls are asynchronous and bounded so one project does not block the daemon. Codex JSONL transport is converted into the final assistant message instead of returning event logs as message content. Installed CLI aliases appear in `/v1/models`; installation is not a login or provider health check.
+
+This extension does not add public/multi-user authorization. Keep the daemon on loopback or behind a separately authenticated private gateway; do not rely on older README security claims as a production security audit. This fork does not change the original TTS capabilities.
+
+Run the deterministic session/protocol tests without invoking paid providers or TTS downloads:
+
+```sh
+npm run test:sessions
+```

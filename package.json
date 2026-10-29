@@ -1,7 +1,7 @@
 {
   "name": "@ude-ai/book-ai",
   "version": "1.0.4",
-  "description": "Zero-config local AI companion for BookReader — unified LLM proxy, neural TTS narrator, and auto-pairing daemon.",
+  "description": "Zero-config local AI companion for BookReader \u2014 unified LLM proxy, neural TTS narrator, and auto-pairing daemon.",
   "type": "module",
   "main": "./src/server.mjs",
   "bin": {
@@ -40,6 +40,7 @@
   },
   "scripts": {
     "start": "node ./bin/book-ai.mjs",
-    "test": "node --test ./test/server.test.mjs"
+    "test": "node --test ./test/server.test.mjs",
+    "test:sessions": "node --test test/sessions.test.mjs"
   }
 }

@@ -1,4 +1,4 @@
-import { queryClaudeCli, queryAgyCli, queryCodexCli } from './cli-provider.mjs';
+import { queryClaudeCli, queryAgyCli, queryCodexCli, detectInstalledClis } from './cli-provider.mjs';
 import { isServerReachable, queryLocalServer } from './server-provider.mjs';
 import { queryCommercialApi } from './api-provider.mjs';
 
@@ -12,7 +12,8 @@ export const CATALOG_MODELS = [
 ];
 
 export function listAvailableModels() {
-  return [...CATALOG_MODELS];
+  const aliases = detectInstalledClis().filter(id => ['claude','agy','codex'].includes(id)).map(id => ({ id: id === 'agy' ? 'agy-cli' : id + '-cli', name: id + ' CLI (availability only)', provider: 'local-cli' }));
+  return [...CATALOG_MODELS, ...aliases];
 }
 
 export async function handleChatCompletion({ model = 'claude-3-5-sonnet', messages = [], config }) {
@@ -26,7 +27,7 @@ export async function handleChatCompletion({ model = 'claude-3-5-sonnet', messag
 
   // 1. Anthropic / Claude
   if (mLower.includes('claude') || mLower === 'claude-cli') {
-    const cliRes = queryClaudeCli(prompt);
+    const cliRes = await queryClaudeCli(prompt);
     if (cliRes) return cliRes;
 
     if (apiKeys.anthropic) {
@@ -40,7 +41,7 @@ export async function handleChatCompletion({ model = 'claude-3-5-sonnet', messag
 
   // 2. Google / Gemini
   if (mLower.includes('gemini') || mLower.includes('agy') || mLower === 'agy-cli') {
-    const cliRes = queryAgyCli(model, prompt);
+    const cliRes = await queryAgyCli(model, prompt);
     if (cliRes) return cliRes;
 
     if (apiKeys.gemini) {
@@ -54,7 +55,7 @@ export async function handleChatCompletion({ model = 'claude-3-5-sonnet', messag
 
   // 3. OpenAI Codex CLI
   if (mLower.includes('codex') || mLower === 'codex-cli') {
-    const cliRes = queryCodexCli(prompt);
+    const cliRes = await queryCodexCli(prompt);
     if (cliRes) return cliRes;
     throw new Error(`Codex CLI provider requested for model "${model}", but 'codex' CLI is not available in PATH.`);
   }
